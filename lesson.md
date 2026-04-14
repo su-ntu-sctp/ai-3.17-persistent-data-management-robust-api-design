@@ -1,16 +1,14 @@
-# Lesson Title
-Persistent Data Management and Robust API Design
+# Lesson: Persistent Data Management and Robust API Design
 
 ## Lesson Overview
 This lesson extends the `simple-crm` project by switching from H2 to PostgreSQL, introducing JPA-derived queries, and strengthening the API through global exception handling and input validation. Learners will build reliable, production-ready APIs with persistent data storage and consistent error responses.
 
 ## Lesson Objectives
-- Configure PostgreSQL as the application database using JPA.  
-- Implement derived queries for flexible data retrieval.  
-- Use `Optional` and custom exceptions for safer lookups.  
-- Centralize error handling with a Global Exception Handler.  
-- Apply validation annotations to enforce input integrity.  
-This lesson is the 2nd part of JPA, where we switch from H2 to PostgreSQL and make our application more robust with exception handling and validation.
+By the end of this lesson, students will be able to:
+
+1. **Switch** from H2 to PostgreSQL and configure Spring Data JPA for persistent storage
+2. **Implement** JPA derived queries and use `Optional` for safer data retrieval
+3. **Centralise** error handling and enforce input validation to build a robust, production-ready API
 
 ---
 
@@ -57,7 +55,7 @@ This will log you in as the `postgres` user. By default, a **superuser** named `
 
 ### Installation on Mac
 
-To install PostgreSQL on Mac, we will be using Homebrew. Homebrew is a package manager for Mac. It is similar to `apt-get` on Ubuntu.
+To install PostgreSQL on Mac, we will be using Homebrew. Homebrew is a package manager for Mac.
 
 Install Homebrew:
 
@@ -92,17 +90,15 @@ Enter PostgreSQL shell:
 psql postgres
 ```
 
-This starts the PostgreSQL shell and connects to the `postgres` database. By default, no password is needed to connect to the database. For the Homebrew installation, we do not need to specify the username because it uses the current user by default.
-
-Unlike the WSL installation, the Homebrew installation does not create a superuser named `postgres`. Instead, it uses your Mac username as the default username. You can check your Mac username with:
+This starts the PostgreSQL shell and connects to the `postgres` database. For the Homebrew installation, no password is needed by default, and it uses your Mac username rather than `postgres`. You can check your Mac username with:
 
 ```sh
 whoami
 ```
 
-### Dbeaver
+### DBeaver
 
-DBeaver is a free and open-source universal database tool for developers and database administrators. It is a GUI program that allows you to connect to a database and perform database operations easily.
+DBeaver is a free and open-source universal database tool for developers and database administrators. It allows you to connect to a database and perform operations easily via a GUI.
 
 Download and install DBeaver from [here](https://dbeaver.io/download/).
 
@@ -114,70 +110,48 @@ Configure the connection settings:
 
 <img src="./assets/images/Connection Settings.png" width=500>
 
-For WSL, the username (`postgres`) and password should be the same as what you have configured during the installation of PostgreSQL. Or it can be left blank if you have set the authentication method to `trust` in the `pg_hba.conf` file (instructions below).
-
-For Mac, the default username is your Mac username and no password is needed.
-
-This can be changed in the `pg_hba.conf` file as needed.
+For WSL, the username (`postgres`) and password should match what you configured during installation. For Mac, the default username is your Mac username and no password is needed.
 
 ### Configuring PostgreSQL Client Authentication (Optional)
 
-To connect to PostgreSQL, you may need to configure the client authentication method. This can be done by editing the `pg_hba.conf` file.
+To connect to PostgreSQL, you may need to configure the client authentication method by editing the `pg_hba.conf` file.
 
-The location of the `pg_hba.conf` file depends on your system.
-
+The location depends on your system:
 - WSL: `/etc/postgresql/16/main/pg_hba.conf`
 - Homebrew (Intel): `/usr/local/var/postgres/`
 - Homebrew (Apple Silicon): `/opt/homebrew/var/postgresql@16/pg_hba.conf`
-
-You can use the `vi` or `nano` command to edit the `pg_hba.conf` file.
 
 ```sh
 sudo nano /etc/postgresql/16/main/pg_hba.conf
 ```
 
-The `pg_hba.conf` file contains a list of records. Each record specifies a connection type, a database name, a user name, an IP address range, and an authentication method.
-
-Depending on your system, the default authentication method might be `scram-sha-256`. This means that you need to provide a password to connect to the database. If you set the authentication method to `trust`, you don't need to provide a password to connect to the database. For more info on the `pg_hba.conf` file, you can read [here](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html).
+If you set the authentication method to `trust`, you don't need a password to connect. For more info, read [here](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html).
 
 ```sh
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
-
-# "local" is for Unix domain socket connections only
 local   all             all                                     trust
-# IPv4 local connections:
 host    all             all             127.0.0.1/32            trust
 ```
 
-If you have forgotten your password, you can set the authentication method to `trust`. Then you can log in to the database without a password to change it. Remember to update `pg_hba.conf` and set the authentication method back to `scram-sha-256`. Note that PostgreSQL service needs to be restarted after editing the `pg_hba.conf` file.
-
-```
-psql -U postgres
-postgres=# \password
-```
-
-You can read more about configuring the `pg_hba.conf` file [here](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html).
+Note that the PostgreSQL service needs to be restarted after editing the file.
 
 ### Adding a New Database
 
-With PostgreSQL installed, we can now create a new database for our application.
-
-This can be done using DBeaver or using psql shell.
+Create a new database for our application using DBeaver or the psql shell:
 
 ```sql
 CREATE DATABASE simple_crm;
 ```
 
-In DBeaver, right click on "Databases" and select "Create Database". Enter the database name and click "OK".
+In DBeaver, right-click on "Databases" and select "Create Database".
 
 ---
 
 ## Part 2: Switching to PostgreSQL
 
-Open the `simple-crm` project.
-With JPA, we can easily switch to another database.
+Open the `simple-crm` project. With JPA, switching databases requires minimal code changes.
 
-First, we need to add the PostgreSQL dependency to our project.
+First, add the PostgreSQL dependency to `pom.xml`:
 
 ```xml
 <dependency>
@@ -186,7 +160,7 @@ First, we need to add the PostgreSQL dependency to our project.
 </dependency>
 ```
 
-You can comment out the H2 dependency for now.
+Comment out the H2 dependency:
 
 ```xml
 <!-- <dependency>
@@ -195,42 +169,39 @@ You can comment out the H2 dependency for now.
 </dependency> -->
 ```
 
-Next, we need to update the `application.properties` file.
+Update `application.properties`:
 
 ```properties
 # Comment out the H2 configuration
-# H2
 # spring.h2.console.enabled=true
 # spring.h2.console.path=/h2
-# spring.datasource.url=jdbc:h2:mem:simple-crm-h2
+# spring.datasource.url=jdbc:h2:mem:simple-crm
 
 # PostgreSQL
 spring.datasource.url=jdbc:postgresql://localhost:5432/simple_crm
-# for WSL, use postgres
-# for Mac, use your Mac username
+# For WSL use: postgres
+# For Mac use: your Mac username
 spring.datasource.username=postgres
-# Password can be blank if we set it to trust in pg_hba.conf
+# Leave blank if authentication is set to trust in pg_hba.conf
 spring.datasource.password=
 spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
-# this will drop and create tables again
+# Drops and recreates tables on startup — useful during development
 spring.jpa.hibernate.ddl-auto=create
-# this can be used to update tables
+# Use this instead when you want to keep existing data
 # spring.jpa.hibernate.ddl-auto=update
 ```
 
-Start your application and test the endpoints.
+Start the application and test the endpoints. Check the tables in DBeaver.
 
-Check the tables in DBeaver.
-
-You can see that with JPA, we can easily switch to another database without changing our code.
+Notice how we switched databases without changing any of our Java code — this is the power of JPA's database abstraction.
 
 ---
 
 ## Part 3: JPA Query Creation from Method Name
 
-JPA provides a set of [methods](https://docs.spring.io/spring-data/jpa/docs/current/api/org/springframework/data/jpa/repository/JpaRepository.html) for us to perform CRUD operations. However, there may be times when we need to perform more complex queries. For example, we may want to find all customers with a certain first name.
+JPA provides built-in methods for CRUD operations, but there are times when we need more specific queries. For example, finding all customers with a certain first name.
 
-In this case, we can create a query using the method name. This is known as JPA Query Creation from Method Name.
+JPA allows us to create queries simply by naming our repository methods in a specific pattern. This is known as **derived queries**.
 
 ```java
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
@@ -240,17 +211,18 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 }
 ```
 
-In our service layer `CustomerServiceImpl`, we can call this method. Remember to add the method to the interface `CustomerService` too.
+Spring JPA reads the method name and automatically generates the appropriate SQL query — no SQL needed.
+
+Add a corresponding method to `CustomerServiceImpl`. Remember to add the signature to the `CustomerService` interface too.
 
 ```java
 @Override
 public ArrayList<Customer> searchCustomers(String firstName) {
-    List<Customer> foundCustomers = customerRepository.findByFirstName(firstName);
-    return (ArrayList<Customer>) foundCustomers;
+    return new ArrayList<>(customerRepository.findByFirstName(firstName));
 }
 ```
 
-And in our controller, we can create a new endpoint to allow the user to search for customers by first name.
+Add a new endpoint in `CustomerController`:
 
 ```java
 @GetMapping("/search")
@@ -260,23 +232,25 @@ public ResponseEntity<ArrayList<Customer>> searchCustomers(@RequestParam String 
 }
 ```
 
-Try to search for customers by first name.
+Test the endpoint:
 
-`http://localhost:8080/customers/search?firstName=Stephen`
+```
+http://localhost:8080/customers/search?firstName=Stephen
+```
 
-To search for first names starting with a certain string, we can use the `StartingWith` keyword. You can try this on your own in your free time.
+You can also search for first names starting with a certain string using the `StartingWith` keyword — try this on your own:
 
 ```java
 List<Customer> findByFirstNameStartingWith(String firstName);
 ```
 
-For more information, you can read more about [JPA Derived Query from Method Name](https://www.baeldung.com/spring-data-derived-queries).
+For more information, read about [JPA Derived Query from Method Name](https://www.baeldung.com/spring-data-derived-queries).
 
 ---
 
 ## Part 4: `Optional` and Exception Handling
 
-Currently, in our `CustomerServiceImpl`, we are doing this:
+Currently, in `CustomerServiceImpl` we are doing this:
 
 ```java
 @Override
@@ -286,35 +260,26 @@ public Customer getCustomer(Long id) {
 }
 ```
 
-What happens when we get a customer id that does not exist?
+What happens when we request a customer id that does not exist?
 
-If you look at the `findById` method in the `CustomerRepository` interface, you will see that it actually returns an `Optional`.
+If you look at the `findById` method, it actually returns an `Optional<Customer>`. An `Optional` is a container object that may or may not contain a non-null value — it represents the presence or absence of a value.
 
-An `Optional` is a container object that may or may not contain a non-null value. It is used to represent the presence or absence of a value.
+We used `.get()` to unwrap the `Optional`, but if the value is absent, this throws a `NoSuchElementException`. Try requesting an invalid id and observe the error.
 
-Hence, we had to use `get()` to unwrap the `Optional` and get the `Customer` object. However, this is not a good practice. If the result is `null`, we will get a `NoSuchElementException`. You can try getting an invalid id.
-
-We should check if the `Optional` contains a value before unwrapping it.
+We should check whether the `Optional` contains a value before unwrapping it:
 
 ```java
 @Override
 public Customer getCustomer(Long id) {
     Optional<Customer> optionalCustomer = customerRepository.findById(id);
     if (optionalCustomer.isPresent()) {
-        // If the Optional contains a value, unwrap it and return the Customer object
-        Customer foundCustomer = optionalCustomer.get();
-        return foundCustomer;
+        return optionalCustomer.get();
     }
-
     throw new CustomerNotFoundException(id);
 }
 ```
 
-Test getting an invalid id.
-
-This can also be further simplified with `orElseThrow()`.
-
-The method `customerRepository.findById(id)` will return an `Optional<Customer>`. `Optional` has a method `orElseThrow()` that will return the value if it is present, or throw an exception if it is not present. We can then use a lambda expression to throw a `CustomerNotFoundException` if the value is not present.
+This can be further simplified using `orElseThrow()`:
 
 ```java
 @Override
@@ -323,16 +288,13 @@ public Customer getCustomer(Long id) {
 }
 ```
 
-You can use whichever method you think is more readable.
+Use whichever you find more readable. The result is the same — a meaningful `CustomerNotFoundException` instead of a cryptic `NoSuchElementException`.
 
-Currently, we are only getting a 404 error. We are not getting a proper error message, which may not be very helpful to the user.
-
-We could return the error message as a string, but our `ResponseEntity` is of type `Customer`. So we could change the type parameter of `ResponseEntity` to `Object`, which is the parent class of all classes in Java.
+Currently we only return a `404` status with no message body. To return a proper error message, we could change the return type to `ResponseEntity<Object>`:
 
 ```java
 @GetMapping("{id}")
 public ResponseEntity<Object> getCustomer(@PathVariable Long id) {
-
     try {
         Customer foundCustomer = customerService.getCustomer(id);
         return new ResponseEntity<>(foundCustomer, HttpStatus.OK);
@@ -342,23 +304,19 @@ public ResponseEntity<Object> getCustomer(@PathVariable Long id) {
 }
 ```
 
-With this, we could return a `Customer` object if the customer is found, or a string if the customer is not found. But we lose the type safety. This means we could return any object, not just a `Customer` object.
-
-Another problem we have now is that we have all these `try-catch` blocks in our controller.
+This works, but it loses type safety and clutters our controller with `try-catch` blocks. There is a better way.
 
 ---
 
 ## Part 5: Global Exception Handler
 
-Spring Boot lets us create a global exception handler to handle all exceptions in our application using the `@ControllerAdvice` annotation. This allows us to define a centralized place to handle exceptions thrown from all controllers in our application.
+Spring Boot lets us create a global exception handler using the `@ControllerAdvice` annotation. This gives us a single centralised place to handle exceptions thrown from any controller in the application — no more scattered `try-catch` blocks.
 
 <img src="https://miro.medium.com/v2/resize:fit:1100/format:webp/1*Rr3r5KfKYc6fVJfTZF-rHA.png" width=550 style="background-color: #fff;padding: 25px; border: 1px solid #333;border-radius: 5px">
 
 > Source: https://medium.com/@praneshgupta/springboot-exception-handling-in-apis-globalexceptionhandler-c549470f7834
 
-Create a new class `GlobalExceptionHandler.java`.
-
-Each exception handler method can be annotated with `@ExceptionHandler` to handle a specific exception.
+Create a new class `GlobalExceptionHandler.java`:
 
 ```java
 import org.springframework.http.HttpStatus;
@@ -369,7 +327,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    // This is a handler for CustomerNotFoundException
     @ExceptionHandler(CustomerNotFoundException.class)
     public ResponseEntity<String> handleCustomerNotFoundException(CustomerNotFoundException ex) {
         return new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND);
@@ -377,7 +334,7 @@ public class GlobalExceptionHandler {
 }
 ```
 
-Hence we no longer need the `try-catch` block in our controller. And we also do not have to return a `ResponseEntity<Object>` and instead return our original `ResponseEntity<Customer>`, which gives us type safety.
+With this in place, we can remove the `try-catch` block from our controller and restore the original return type:
 
 ```java
 @GetMapping("{id}")
@@ -387,126 +344,91 @@ public ResponseEntity<Customer> getCustomer(@PathVariable Long id) {
 }
 ```
 
-Now, when an exception is thrown, it will be caught by this global exception handler. The specific exception handler method will be called to handle the exception.
+When `CustomerNotFoundException` is thrown anywhere in the application, it will be caught and handled by the global handler automatically.
 
-Currently we are returning it as a string. We could give it a more proper structure by creating a new `ErrorResponse` class .
+### Structured Error Response
+
+Currently we are returning the error as a plain string. We can give it a proper structure by creating an `ErrorResponse` class.
 
 ```java
 @Getter
 @Setter
 @AllArgsConstructor
 public class ErrorResponse {
-  private String message;
-  private LocalDateTime timestamp;
+    private String message;
+    private LocalDateTime timestamp;
 }
 ```
 
-And update the exception handler method to return an `ErrorResponse` object.
+Update the exception handler to return an `ErrorResponse`:
 
 ```java
 @ExceptionHandler(CustomerNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleCustomerNotFoundException(CustomerNotFoundException ex) {
+public ResponseEntity<ErrorResponse> handleCustomerNotFoundException(CustomerNotFoundException ex) {
     ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), LocalDateTime.now());
     return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
 }
 ```
 
-Providing a meaningful error message is useful for our frontend too as it can display the error message to the user.
+This gives the frontend a consistent, structured error response it can parse and display meaningfully.
 
 ### General Exception Handler
 
-We can also add a general exception handler to handle all other exceptions that are not handled by the specific exception handlers. This is useful because there may be other exceptions that we have not yet handled or that we did not expect.
-
-For example, currently, we have not handled invalid interactions. Try to get an invalid interaction.
-
-We will get a `NoSuchElementException` when we try to get an interaction that does not exist.
-
-With a general exception handler, we can return a generic error message to the user.
+We should also add a catch-all handler for any unexpected exceptions we have not explicitly handled. For example, try requesting an interaction that does not exist — you will get a `NoSuchElementException`.
 
 ```java
 @ExceptionHandler(Exception.class)
 public ResponseEntity<ErrorResponse> handleException(Exception ex) {
-    // We can log the exception here
-    // logger.error(ex.getMessage(), ex);
-    // Return a generic error message
+    // Log the exception here if needed
     ErrorResponse errorResponse = new ErrorResponse("Something went wrong", LocalDateTime.now());
     return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
 }
 ```
 
-Try to get an invalid interaction again.
+This prevents internal implementation details from leaking to the client while still returning a meaningful response.
 
-With this in place, the user will get a generic error message when an exception is thrown and we do not have to expose too much information about our application.
+### 👨‍💻 Activity **(15 minutes)**
 
-We can add another exception handler to handle this exception.
+Refactor `CustomerServiceImpl` and `InteractionServiceImpl` to use `orElseThrow()`. Create a new `InteractionNotFoundException` class that extends `RuntimeException`. Throw it when an interaction is not found.
 
-### 👨‍💻 Activity
-
-Refactor the code in `CustomerServiceImpl` and `InteractionServiceImpl` to use `Optionals`. Create a new `InteractionNotFoundException` class that extends `RuntimeException`. Throw this exception when the interaction is not found.
-
-Use the Global Exception Handler to handle these exceptions.
-
-### Handling more than one exception
-
-You may have noticed that the handler method for both `CustomerNotFoundException` and `InteractionNotFoundException` is almost identical. How can we refactor it then?
-
-In the `@ExceptionHandler` annotation, we can use a array notation to define a array of exception class to handle. For the method, we will need to define a parameter of common type between the exception classes. In this case, `CustomerNotFoundException` and `InteractionNotFoundException` are both `RuntimeException`.
-
-By changing the `handleCustomerNotFoundException` method as shown below, we can further refactor the codes by minimising the number of handlers method we need.
+Update the `GlobalExceptionHandler` to handle both `CustomerNotFoundException` and `InteractionNotFoundException`. Since both extend `RuntimeException`, you can handle them in a single method using array notation:
 
 ```java
-// rename handleCustomerNotFoundException -> handleResourceNotFoundException
 @ExceptionHandler({CustomerNotFoundException.class, InteractionNotFoundException.class})
-    public ResponseEntity<ErrorResponse> handleResourceNotFoundException(RuntimeException ex) {
+public ResponseEntity<ErrorResponse> handleResourceNotFoundException(RuntimeException ex) {
     ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), LocalDateTime.now());
     return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
 }
-
-// @ExceptionHandler(InteractionNotFoundException.class)
-//    public ResponseEntity<ErrorResponse> handleInteractionNotFoundException(InteractionException ex) {
-//    ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), LocalDateTime.now());
-//    return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
-//}
-
 ```
 
 ---
 
 ## Part 6: Validation
 
-Try to create a new customer with an empty name and an invalid email address.
+Try creating a new customer with an empty name or an invalid email address. The data gets saved without any complaints — this is a problem.
 
-We have a problem now because the user could input invalid data such as an empty name or an invalid email address.
+We cannot rely solely on the frontend to validate data. We should validate it on the backend too to prevent invalid data from reaching the database.
 
-This should be handled by the frontend. But we cannot assume that it will always be handled or that it is handled correctly. Hence, we should also validate the data on the backend to prevent invalid data from being saved to the database.
-
-To do this, let's install the `spring-boot-starter-validation` dependency.
+Add the validation dependency to `pom.xml`:
 
 ```xml
 <dependency>
-	<groupId>org.springframework.boot</groupId>
-	<artifactId>spring-boot-starter-validation</artifactId>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>
 </dependency>
 ```
 
-Let's add validation constraints to our `Customer` class.
+Add validation constraints to the `Customer` class:
 
 ```java
-public class Customer {
-  // ...
+@NotBlank(message = "First name is mandatory")
+private String firstName;
 
-  @NotBlank(message = "First name is mandatory")
-  private String firstName;
-
-  @Email(message = "Email should be valid")
-  private String email;
-
-}
+@Email(message = "Email should be valid")
+private String email;
 ```
 
-This will validate that the `firstName` is not blank and that the `email` is a valid email address.
-
-We also need to use the `@Valid` annotation in our controller. The `@Valid` annotation tells Spring to validate the request body.
+Add the `@Valid` annotation to the controller. Note that `@Valid` must be placed **before** `@RequestBody` — the order matters.
 
 ```java
 @PostMapping
@@ -516,47 +438,23 @@ public ResponseEntity<Customer> createCustomer(@Valid @RequestBody Customer cust
 }
 ```
 
-Note that `@Valid` has to be placed before `@RequestBody`. The order matters because `@Valid` tells Spring to validate the request body. If it is placed after `@RequestBody`, Spring will not know what to validate.
-
-Test out the validation.
-
-The validation exception will get caught by our general exception handler.
-
-### `BindingResult`
-
-We can get the validation errors from the `BindingResult` object. The `BindingResult` object contains the result of the validation and any errors that may have occurred during the validation.
-
-```java
-@PostMapping("")
-public ResponseEntity<Customer> createCustomer(@Valid @RequestBody Customer customer, BindingResult bindingResult) {
-
-    if (bindingResult.hasErrors()) {
-        return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
-    }
-
-    Customer newCustomer = customerService.createCustomer(customer);
-    return new ResponseEntity<>(newCustomer, HttpStatus.CREATED);
-}
-```
+Test by submitting an invalid request. The validation exception will be caught by the general exception handler for now.
 
 ### Catching Validation Exceptions
 
-Since we have a global exception handler now, we can add another exception handler to handle validation exceptions. Remember to remove the `BindingResult` parameter from the controller method first.
+We can add a dedicated handler for validation exceptions in our `GlobalExceptionHandler` to return specific, helpful error messages:
 
 ```java
-// VALIDATION EXCEPTION HANDLER
 @ExceptionHandler(MethodArgumentNotValidException.class)
 public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
 
-    // Get a list of all validation errors from the exception object
+    // Get all validation errors
     List<ObjectError> validationErrors = ex.getBindingResult().getAllErrors();
 
-    // Create a StringBuilder to store all error messages
+    // Build an error message string from all errors
     StringBuilder sb = new StringBuilder();
-
-    // Loop through all errors and append error messages to StringBuilder
     for (ObjectError error : validationErrors) {
-        sb.append(error.getDefaultMessage() + ". ");
+        sb.append(error.getDefaultMessage()).append(". ");
     }
 
     ErrorResponse errorResponse = new ErrorResponse(sb.toString(), LocalDateTime.now());
@@ -564,64 +462,45 @@ public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNo
 }
 ```
 
-Sidenote: `StringBuilder` is a mutable sequence of characters. It is more efficient than `String` when we need to append strings. You can read more about `String` vs `StringBuilder` [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
+> Note: `StringBuilder` is a mutable sequence of characters, more efficient than `String` when appending multiple values. Read more [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
 
-Test out the validation.
+Test the validation — you should now get a structured error response with the specific validation message.
 
-## 👨‍💻 Activity
+### 👨‍💻 Activity **(10 minutes)**
 
-Using annotations, add validation constraints for the folowing:
+Add validation constraints for the following:
 
-- Customer `yearOfBirth` should be between 1940 and 2005 (you'll have to update the dataloader and constructor for this)
-- Customer `contactNo` should be 8 characters long (no need to check if it is a valid phone number)
-- Interaction `remarks` should be at least 3 characters long and at most 30 characters long
+- Customer `yearOfBirth` should be between 1940 and 2005
+- Customer `contactNo` should be exactly 8 characters long
+- Interaction `remarks` should be at least 3 and at most 30 characters long
 - `interactionDate` should not be in the future
 
-Validation annotations references:
+You will need to update the `DataLoader` and any constructors accordingly.
 
+Validation annotation references:
 - https://www.baeldung.com/java-validation
 - https://education.launchcode.org/java-web-development/chapters/spring-model-validation/validation-annotations.html
-- https://cheatsheetseries.owasp.org/cheatsheets/Bean_Validation_Cheat_Sheet.html
 
 ---
 
-## Part 7: Install PostgreSQL Using Docker (Optional)
+## Part 7 (Optional): Install PostgreSQL Using Docker
 
-You can also install PostgreSQL using Docker. You can try this on your own in your free time.
+Docker is a containerisation platform that allows you to run applications in containers. It will be covered in more detail in the DevOps module. You can try this on your own in your free time.
 
-Docker is a containerization platform that allows you to run applications in a container. It is similar to a virtual machine but it is more lightweight and faster. You can read more about Docker [here](https://www.docker.com/resources/what-container). Docker will be covered in more details in the DevOps module.
+Install Docker from [here](https://docs.docker.com/get-docker/) if you haven't already.
 
-If you don't have Docker installed, you can install it from [here](https://docs.docker.com/get-docker/).
-
-If you have Docker installed, you can install PostgreSQL using Docker.
+Run PostgreSQL in a Docker container:
 
 ```sh
 docker run --name mypostgres -e POSTGRES_PASSWORD=password -d -p 5433:5432 postgres
 ```
 
-The command above will pull the latest PostgreSQL image from Docker Hub and run it in a container. The container will be named `mypostgres` and the password for the default user `postgres` will be `password`. The container will be running on port `5433`.
-
-You can check if the container is running with:
+This pulls the latest PostgreSQL image and runs it on port `5433`. Useful commands:
 
 ```sh
-docker ps
-```
-
-You can stop the container with:
-
-```sh
+docker ps          # check running containers
 docker stop mypostgres
-```
-
-You can start the container with:
-
-```sh
 docker start mypostgres
-```
-
-You can remove the container with:
-
-```sh
 docker rm mypostgres
 ```
 
