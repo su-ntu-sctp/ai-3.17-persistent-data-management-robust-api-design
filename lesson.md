@@ -1,7 +1,17 @@
-# Lesson: Persistent Data Management and Robust API Design
+# Lesson 3.17: Persistent Data Management and Robust API Design
 
 ## Lesson Overview
 This lesson extends the `simple-crm` project by switching from H2 to PostgreSQL, introducing JPA-derived queries, and strengthening the API through global exception handling and input validation. Learners will build reliable, production-ready APIs with persistent data storage and consistent error responses.
+
+## Starting Point
+Before beginning this lesson, your `simple-crm` project should have:
+- `Customer` and `Interaction` entity classes with a `@ManyToOne` / `@OneToMany` relationship
+- `CustomerRepository` and `InteractionRepository` interfaces extending `JpaRepository`
+- `CustomerServiceImpl` with both repositories injected
+- H2 configured in `application.properties`
+- Basic CRUD operations working for both `Customer` and `Interaction`
+
+If you are missing any of the above, revisit Lesson 3.16 before continuing.
 
 ## Lesson Objectives
 By the end of this lesson, students will be able to:
@@ -184,12 +194,16 @@ spring.datasource.url=jdbc:postgresql://localhost:5432/simple_crm
 spring.datasource.username=postgres
 # Leave blank if authentication is set to trust in pg_hba.conf
 spring.datasource.password=
-spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
-# Drops and recreates tables on startup — useful during development
+
+# ⚠️ WARNING: 'create' drops and recreates ALL tables on every startup — all existing data will be lost.
+# This is acceptable during early development, but switch to 'update' as soon as you want to keep your data.
 spring.jpa.hibernate.ddl-auto=create
-# Use this instead when you want to keep existing data
+# Use this instead when you want to keep existing data:
 # spring.jpa.hibernate.ddl-auto=update
+# In production, use a migration tool like Flyway or Liquibase instead of ddl-auto.
 ```
+
+> **Note:** Spring Boot 3.x with Hibernate 6 auto-detects the PostgreSQL dialect — you do not need to set `spring.jpa.database-platform` manually. Omitting it is the recommended approach.
 
 Start the application and test the endpoints. Check the tables in DBeaver.
 
@@ -217,8 +231,8 @@ Add a corresponding method to `CustomerServiceImpl`. Remember to add the signatu
 
 ```java
 @Override
-public ArrayList<Customer> searchCustomers(String firstName) {
-    return new ArrayList<>(customerRepository.findByFirstName(firstName));
+public List<Customer> searchCustomers(String firstName) {
+    return customerRepository.findByFirstName(firstName);
 }
 ```
 
@@ -226,8 +240,8 @@ Add a new endpoint in `CustomerController`:
 
 ```java
 @GetMapping("/search")
-public ResponseEntity<ArrayList<Customer>> searchCustomers(@RequestParam String firstName) {
-    ArrayList<Customer> foundCustomers = customerService.searchCustomers(firstName);
+public ResponseEntity<List<Customer>> searchCustomers(@RequestParam String firstName) {
+    List<Customer> foundCustomers = customerService.searchCustomers(firstName);
     return new ResponseEntity<>(foundCustomers, HttpStatus.OK);
 }
 ```
@@ -293,7 +307,7 @@ Use whichever you find more readable. The result is the same — a meaningful `C
 Currently we only return a `404` status with no message body. To return a proper error message, we could change the return type to `ResponseEntity<Object>`:
 
 ```java
-@GetMapping("{id}")
+@GetMapping("/{id}")
 public ResponseEntity<Object> getCustomer(@PathVariable Long id) {
     try {
         Customer foundCustomer = customerService.getCustomer(id);
@@ -310,7 +324,9 @@ This works, but it loses type safety and clutters our controller with `try-catch
 
 ## Part 5: Global Exception Handler
 
-Spring Boot lets us create a global exception handler using the `@ControllerAdvice` annotation. This gives us a single centralised place to handle exceptions thrown from any controller in the application — no more scattered `try-catch` blocks.
+Spring Boot lets us create a global exception handler using the `@RestControllerAdvice` annotation. This gives us a single centralised place to handle exceptions thrown from any controller in the application — no more scattered `try-catch` blocks.
+
+> **Note:** We use `@RestControllerAdvice` (not `@ControllerAdvice`) for REST APIs. It combines `@ControllerAdvice` and `@ResponseBody`, ensuring all handler methods automatically serialize their return value to JSON — which is exactly what we want in a REST API.
 
 <img src="https://miro.medium.com/v2/resize:fit:1100/format:webp/1*Rr3r5KfKYc6fVJfTZF-rHA.png" width=550 style="background-color: #fff;padding: 25px; border: 1px solid #333;border-radius: 5px">
 
@@ -321,10 +337,10 @@ Create a new class `GlobalExceptionHandler.java`:
 ```java
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@ControllerAdvice
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(CustomerNotFoundException.class)
@@ -337,7 +353,7 @@ public class GlobalExceptionHandler {
 With this in place, we can remove the `try-catch` block from our controller and restore the original return type:
 
 ```java
-@GetMapping("{id}")
+@GetMapping("/{id}")
 public ResponseEntity<Customer> getCustomer(@PathVariable Long id) {
     Customer foundCustomer = customerService.getCustomer(id);
     return new ResponseEntity<>(foundCustomer, HttpStatus.OK);
@@ -351,6 +367,12 @@ When `CustomerNotFoundException` is thrown anywhere in the application, it will 
 Currently we are returning the error as a plain string. We can give it a proper structure by creating an `ErrorResponse` class.
 
 ```java
+import java.time.LocalDateTime;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
 @Getter
 @Setter
 @AllArgsConstructor
@@ -359,6 +381,8 @@ public class ErrorResponse {
     private LocalDateTime timestamp;
 }
 ```
+
+> **Note:** `LocalDateTime` comes from `java.time.LocalDateTime` — make sure this import is present. Your IDE should add it automatically, but check if you see a red squiggle.
 
 Update the exception handler to return an `ErrorResponse`:
 
@@ -428,15 +452,17 @@ private String firstName;
 private String email;
 ```
 
-Add the `@Valid` annotation to the controller. Note that `@Valid` must be placed **before** `@RequestBody` — the order matters.
+Add the `@Valid` annotation to the controller method:
 
 ```java
 @PostMapping
-public ResponseEntity<Customer> createCustomer(@Valid @RequestBody Customer customer) {
+public ResponseEntity<Customer> createCustomer(@RequestBody @Valid Customer customer) {
     Customer createdCustomer = customerService.createCustomer(customer);
     return new ResponseEntity<>(createdCustomer, HttpStatus.CREATED);
 }
 ```
+
+> **Note:** `@Valid` and `@RequestBody` can appear in either order — Spring processes them by type, not position. Both `@Valid @RequestBody` and `@RequestBody @Valid` work identically.
 
 Test by submitting an invalid request. The validation exception will be caught by the general exception handler for now.
 
@@ -445,6 +471,10 @@ Test by submitting an invalid request. The validation exception will be caught b
 We can add a dedicated handler for validation exceptions in our `GlobalExceptionHandler` to return specific, helpful error messages:
 
 ```java
+import java.util.List;
+import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+
 @ExceptionHandler(MethodArgumentNotValidException.class)
 public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
 
@@ -462,7 +492,13 @@ public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNo
 }
 ```
 
-> Note: `StringBuilder` is a mutable sequence of characters, more efficient than `String` when appending multiple values. Read more [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
+> **Imports needed:**
+> - `org.springframework.validation.ObjectError`
+> - `org.springframework.web.bind.MethodArgumentNotValidException`
+>
+> Your IDE should resolve these automatically. Check for red squiggles if anything fails to compile.
+
+> **Note:** `StringBuilder` is a mutable sequence of characters, more efficient than `String` when appending multiple values. Read more [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
 
 Test the validation — you should now get a structured error response with the specific validation message.
 
@@ -473,36 +509,13 @@ Add validation constraints for the following:
 - Customer `yearOfBirth` should be between 1940 and 2005
 - Customer `contactNo` should be exactly 8 characters long
 - Interaction `remarks` should be at least 3 and at most 30 characters long
-- `interactionDate` should not be in the future
+- `interactionDate` should not be in the future — use `@PastOrPresent` for this
 
 You will need to update the `DataLoader` and any constructors accordingly.
 
 Validation annotation references:
 - https://www.baeldung.com/java-validation
 - https://education.launchcode.org/java-web-development/chapters/spring-model-validation/validation-annotations.html
-
----
-
-## Part 7 (Optional): Install PostgreSQL Using Docker
-
-Docker is a containerisation platform that allows you to run applications in containers. It will be covered in more detail in the DevOps module. You can try this on your own in your free time.
-
-Install Docker from [here](https://docs.docker.com/get-docker/) if you haven't already.
-
-Run PostgreSQL in a Docker container:
-
-```sh
-docker run --name mypostgres -e POSTGRES_PASSWORD=password -d -p 5433:5432 postgres
-```
-
-This pulls the latest PostgreSQL image and runs it on port `5433`. Useful commands:
-
-```sh
-docker ps          # check running containers
-docker stop mypostgres
-docker start mypostgres
-docker rm mypostgres
-```
 
 ---
 
