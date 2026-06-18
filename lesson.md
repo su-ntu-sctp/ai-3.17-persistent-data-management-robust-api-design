@@ -258,73 +258,129 @@ You can also search for first names starting with a certain string using the `St
 List<Customer> findByFirstNameStartingWith(String firstName);
 ```
 
+### Searching by Multiple Fields
+
+To search by both first name and last name, chain the fields with `And`:
+
+```java
+List<Customer> findByFirstNameAndLastName(String firstName, String lastName);
+```
+
+Spring JPA reads the method name and generates:
+
+```sql
+SELECT * FROM customer WHERE first_name = ? AND last_name = ?
+```
+
+> **Note:** The field names in the method name must exactly match the field names in your entity class. So if your entity has `firstName` (camelCase), the method uses `FirstName` (capitalised camelCase after `findBy`). Spring handles the translation to `first_name` in SQL automatically.
+
+Since `/search` is already taken by `findByFirstName`, use a different path for this endpoint:
+
+```java
+@GetMapping("/search/full")
+public ResponseEntity<List<Customer>> searchCustomers(
+        @RequestParam String firstName,
+        @RequestParam String lastName) {
+    List<Customer> foundCustomers = customerService.searchCustomers(firstName, lastName);
+    return new ResponseEntity<>(foundCustomers, HttpStatus.OK);
+}
+```
+
+Test it:
+
+```
+http://localhost:8080/customers/search/full?firstName=Stephen&lastName=Strange
+```
+
 For more information, read about [JPA Derived Query from Method Name](https://www.baeldung.com/spring-data-derived-queries).
 
 ---
 
 ## Part 4: `Optional` and Exception Handling
 
-Currently, in `CustomerServiceImpl` we are doing this:
+In Lesson 3.16, you already refactored `CustomerServiceImpl` to use `.orElseThrow()` with a generic `RuntimeException`:
 
 ```java
 @Override
 public Customer getCustomer(Long id) {
-    Customer foundCustomer = customerRepository.findById(id).get();
-    return foundCustomer;
+    return customerRepository.findById(id)
+        .orElseThrow(() -> new RuntimeException("Customer not found with id: " + id));
 }
 ```
 
-What happens when we request a customer id that does not exist?
+This is a good start — `.orElseThrow()` is the correct approach over `.get()`. However, throwing a generic `RuntimeException` makes it impossible to handle this specific case cleanly. The next step is to replace it with a **custom exception class**.
 
-If you look at the `findById` method, it actually returns an `Optional<Customer>`. An `Optional` is a container object that may or may not contain a non-null value — it represents the presence or absence of a value.
+### Why a Custom Exception?
 
-We used `.get()` to unwrap the `Optional`, but if the value is absent, this throws a `NoSuchElementException`. Try requesting an invalid id and observe the error.
+With a generic `RuntimeException`, our `GlobalExceptionHandler` (coming in Part 5) cannot target it specifically — it would catch unrelated exceptions too. A dedicated `CustomerNotFoundException` lets us:
+- Return a meaningful `404 NOT FOUND` response specifically for this case
+- Keep other unexpected exceptions returning `500 INTERNAL SERVER ERROR`
 
-We should check whether the `Optional` contains a value before unwrapping it:
+### Create `CustomerNotFoundException`
 
-```java
-@Override
-public Customer getCustomer(Long id) {
-    Optional<Customer> optionalCustomer = customerRepository.findById(id);
-    if (optionalCustomer.isPresent()) {
-        return optionalCustomer.get();
-    }
-    throw new CustomerNotFoundException(id);
-}
-```
-
-This can be further simplified using `orElseThrow()`:
+Create a new class `CustomerNotFoundException.java`:
 
 ```java
-@Override
-public Customer getCustomer(Long id) {
-    return customerRepository.findById(id).orElseThrow(() -> new CustomerNotFoundException(id));
-}
-```
-
-Use whichever you find more readable. The result is the same — a meaningful `CustomerNotFoundException` instead of a cryptic `NoSuchElementException`.
-
-Currently we only return a `404` status with no message body. To return a proper error message, we could change the return type to `ResponseEntity<Object>`:
-
-```java
-@GetMapping("/{id}")
-public ResponseEntity<Object> getCustomer(@PathVariable Long id) {
-    try {
-        Customer foundCustomer = customerService.getCustomer(id);
-        return new ResponseEntity<>(foundCustomer, HttpStatus.OK);
-    } catch (CustomerNotFoundException e) {
-        return new ResponseEntity<>(e.getMessage(), HttpStatus.NOT_FOUND);
+public class CustomerNotFoundException extends RuntimeException {
+    public CustomerNotFoundException(Long id) {
+        super("Customer not found with id: " + id);
     }
 }
 ```
 
-This works, but it loses type safety and clutters our controller with `try-catch` blocks. There is a better way.
+> **Note:** The constructor takes a `Long id` parameter — not a `String`. This matches the `id` type used throughout the application.
+
+### Update `CustomerServiceImpl`
+
+Now update all methods that do a customer lookup to throw `CustomerNotFoundException` instead of `RuntimeException`:
+
+```java
+@Override
+public Customer getCustomer(Long id) {
+    return customerRepository.findById(id)
+        .orElseThrow(() -> new CustomerNotFoundException(id));
+}
+
+@Override
+public Customer updateCustomer(Long id, Customer customer) {
+    Customer customerToUpdate = customerRepository.findById(id)
+        .orElseThrow(() -> new CustomerNotFoundException(id));
+    customerToUpdate.setFirstName(customer.getFirstName());
+    customerToUpdate.setLastName(customer.getLastName());
+    customerToUpdate.setEmail(customer.getEmail());
+    customerToUpdate.setContactNo(customer.getContactNo());
+    customerToUpdate.setJobTitle(customer.getJobTitle());
+    customerToUpdate.setYearOfBirth(customer.getYearOfBirth());
+    return customerRepository.save(customerToUpdate);
+}
+
+@Override
+public void deleteCustomer(Long id) {
+    customerRepository.findById(id)
+        .orElseThrow(() -> new CustomerNotFoundException(id));
+    customerRepository.deleteById(id);
+}
+
+@Override
+public Interaction addInteractionToCustomer(Long id, Interaction interaction) {
+    Customer selectedCustomer = customerRepository.findById(id)
+        .orElseThrow(() -> new CustomerNotFoundException(id));
+    interaction.setCustomer(selectedCustomer);
+    return interactionRepository.save(interaction);
+}
+```
+
+> **Note:** `deleteCustomer` now does a lookup before deleting. This ensures the client gets a meaningful `404` if they try to delete a non-existent customer, rather than a silent no-op.
 
 ---
 
 ## Part 5: Global Exception Handler
 
 Spring Boot lets us create a global exception handler using the `@RestControllerAdvice` annotation. This gives us a single centralised place to handle exceptions thrown from any controller in the application — no more scattered `try-catch` blocks.
+
+### Why `@RestControllerAdvice`?
+
+Without a global handler, every controller method that could throw an exception needs its own `try-catch` block. This leads to repetitive, cluttered code. With `@RestControllerAdvice`, exceptions bubble up from the service layer, through the controller, and are caught in one place automatically.
 
 > **Note:** We use `@RestControllerAdvice` (not `@ControllerAdvice`) for REST APIs. It combines `@ControllerAdvice` and `@ResponseBody`, ensuring all handler methods automatically serialize their return value to JSON — which is exactly what we want in a REST API.
 
@@ -350,7 +406,7 @@ public class GlobalExceptionHandler {
 }
 ```
 
-With this in place, we can remove the `try-catch` block from our controller and restore the original return type:
+With this in place, we can remove the `try-catch` blocks from our controller. Since `@RestControllerAdvice` intercepts exceptions from **any** controller method in the application, you can remove `try-catch` from all methods that throw `CustomerNotFoundException` — that includes `getCustomer`, `updateCustomer`, and `deleteCustomer`. Only `createCustomer` is unaffected since it does not do a lookup by ID.
 
 ```java
 @GetMapping("/{id}")
@@ -364,7 +420,9 @@ When `CustomerNotFoundException` is thrown anywhere in the application, it will 
 
 ### Structured Error Response
 
-Currently we are returning the error as a plain string. We can give it a proper structure by creating an `ErrorResponse` class.
+Currently we are returning the error as a plain string. This works, but it is not ideal — the frontend receives an inconsistent response (sometimes a JSON object, sometimes a plain string) which makes it harder to parse and display errors meaningfully.
+
+We can fix this by creating a dedicated `ErrorResponse` class that gives every error a consistent structure with a message and a timestamp:
 
 ```java
 import java.time.LocalDateTime;
@@ -394,7 +452,16 @@ public ResponseEntity<ErrorResponse> handleCustomerNotFoundException(CustomerNot
 }
 ```
 
-This gives the frontend a consistent, structured error response it can parse and display meaningfully.
+Now every error response from this handler looks like this:
+
+```json
+{
+    "message": "Customer not found with id: 99",
+    "timestamp": "2026-06-18T15:45:36.189"
+}
+```
+
+The frontend always knows what shape to expect, making error handling predictable and reliable.
 
 ### General Exception Handler
 
@@ -409,13 +476,24 @@ public ResponseEntity<ErrorResponse> handleException(Exception ex) {
 }
 ```
 
-This prevents internal implementation details from leaking to the client while still returning a meaningful response.
+A few things to note here:
+- **`Exception.class`** — this is the base class of all exceptions in Java, so this handler catches anything that has not been explicitly handled by a more specific `@ExceptionHandler` method above it.
+- **`HttpStatus.INTERNAL_SERVER_ERROR` (500)** — we return `500` because an unhandled exception means something unexpected happened on the **server side**, not because the client sent a bad request. `500` tells the client "this is our problem, not yours."
+- **`"Something went wrong"`** — we deliberately return a generic message instead of the real exception message. This is a security best practice — internal error details (stack traces, database errors, class names) should never be exposed to the client as they can reveal implementation details that attackers could exploit.
 
 ### 👨‍💻 Activity **(15 minutes)**
 
-Refactor `CustomerServiceImpl` and `InteractionServiceImpl` to use `orElseThrow()`. Create a new `InteractionNotFoundException` class that extends `RuntimeException`. Throw it when an interaction is not found.
+**Step 1** — Create a new `InteractionNotFoundException` class that extends `RuntimeException`:
 
-Update the `GlobalExceptionHandler` to handle both `CustomerNotFoundException` and `InteractionNotFoundException`. Since both extend `RuntimeException`, you can handle them in a single method using array notation:
+```java
+public class InteractionNotFoundException extends RuntimeException {
+    public InteractionNotFoundException(Long id) {
+        super("Interaction not found with id: " + id);
+    }
+}
+```
+
+**Step 2** — Update `GlobalExceptionHandler` to handle both `CustomerNotFoundException` and `InteractionNotFoundException` in a single method using array notation:
 
 ```java
 @ExceptionHandler({CustomerNotFoundException.class, InteractionNotFoundException.class})
@@ -424,6 +502,10 @@ public ResponseEntity<ErrorResponse> handleResourceNotFoundException(RuntimeExce
     return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
 }
 ```
+
+Since both exceptions extend `RuntimeException`, the parameter type is `RuntimeException` and `ex.getMessage()` works for both.
+
+> **Note:** `InteractionServiceImpl` is not part of this module — `Interaction` was introduced solely to demonstrate the many-to-one relationship. `InteractionNotFoundException` is created here for completeness and good practice, as it can be used in `CustomerServiceImpl` if interaction lookups are needed in future.
 
 ---
 
@@ -466,9 +548,15 @@ public ResponseEntity<Customer> createCustomer(@RequestBody @Valid Customer cust
 
 Test by submitting an invalid request. The validation exception will be caught by the general exception handler for now.
 
-### Catching Validation Exceptions
+### Catching Validation Exceptions (Optional)
 
-We can add a dedicated handler for validation exceptions in our `GlobalExceptionHandler` to return specific, helpful error messages:
+We can add a dedicated handler for validation exceptions in our `GlobalExceptionHandler` to return specific, helpful error messages.
+
+When `@Valid` fails, Spring throws a `MethodArgumentNotValidException`. This exception contains a `BindingResult` — an object that holds all the validation errors that occurred. Each individual error is represented as an `ObjectError`, which contains the message from the validation annotation (e.g. `"First name is mandatory"`).
+
+We loop through all the errors and build a single combined error message using a `StringBuilder` — a mutable sequence of characters that is more efficient than concatenating strings with `+` in a loop. Read more [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
+
+We return `400 BAD_REQUEST` because validation failures are the **client's fault** — they sent invalid data. This is different from `500 INTERNAL_SERVER_ERROR` which means something went wrong on the server side.
 
 ```java
 import java.util.List;
@@ -498,20 +586,15 @@ public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNo
 >
 > Your IDE should resolve these automatically. Check for red squiggles if anything fails to compile.
 
-> **Note:** `StringBuilder` is a mutable sequence of characters, more efficient than `String` when appending multiple values. Read more [here](https://medium.com/@AlexanderObregon/understanding-string-vs-stringbuilder-in-java-50448cbbf253).
-
 Test the validation — you should now get a structured error response with the specific validation message.
 
 ### 👨‍💻 Activity **(10 minutes)**
 
 Add validation constraints for the following:
 
-- Customer `yearOfBirth` should be between 1940 and 2005
 - Customer `contactNo` should be exactly 8 characters long
 - Interaction `remarks` should be at least 3 and at most 30 characters long
 - `interactionDate` should not be in the future — use `@PastOrPresent` for this
-
-You will need to update the `DataLoader` and any constructors accordingly.
 
 Validation annotation references:
 - https://www.baeldung.com/java-validation
