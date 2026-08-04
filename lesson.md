@@ -170,14 +170,21 @@ First, add the PostgreSQL dependency to `pom.xml`:
 </dependency>
 ```
 
-Comment out the H2 dependency:
+Comment out the H2 dependencies. Since Lesson 3.16, your `pom.xml` has **two** H2-related dependencies — the H2 database driver itself, and the H2 console starter that was added so the console works on Spring Boot 4's modularised auto-configuration. Both need to be commented out when switching to Postgres:
 
 ```xml
 <!-- <dependency>
     <groupId>com.h2database</groupId>
     <artifactId>h2</artifactId>
 </dependency> -->
+
+<!-- <dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-h2console</artifactId>
+</dependency> -->
 ```
+
+> **Note:** If you only comment out `h2database:h2` and leave `spring-boot-h2console` in place, the app will still run fine — the H2 console auto-config simply has nothing to attach to since there's no H2 datasource. But it's cleaner to remove both together, since neither is needed once you're fully on Postgres.
 
 Update `application.properties`:
 
@@ -203,7 +210,7 @@ spring.jpa.hibernate.ddl-auto=create
 # In production, use a migration tool like Flyway or Liquibase instead of ddl-auto.
 ```
 
-> **Note:** Spring Boot 3.x with Hibernate 6 auto-detects the PostgreSQL dialect — you do not need to set `spring.jpa.database-platform` manually. Omitting it is the recommended approach.
+> **Note:** Spring Boot 4.x with Hibernate 7 auto-detects the PostgreSQL dialect — you do not need to set `spring.jpa.database-platform` manually. Omitting it is the recommended approach.
 
 Start the application and test the endpoints. Check the tables in DBeaver.
 
@@ -595,6 +602,18 @@ Add validation constraints for the following:
 - Customer `contactNo` should be exactly 8 characters long
 - Interaction `remarks` should be at least 3 and at most 30 characters long
 - `interactionDate` should not be in the future — use `@PastOrPresent` for this
+
+> ⚠️ **Important:** This activity only produces the clean `400 Bad Request` response you expect if the Interaction-creation endpoint (`addInteractionToCustomer` in `CustomerController`, from Lesson 3.16 Part 5) has `@Valid` on its `@RequestBody Interaction interaction` parameter — the same way `createCustomer` does above. Without `@Valid` there, invalid Interaction data skips controller-level validation entirely and instead fails later at persist time via Hibernate's own Bean Validation, throwing `ConstraintViolationException` instead of `MethodArgumentNotValidException`. Since `handleValidationExceptions` only catches the latter, a missing `@Valid` here means the request falls through to the generic `Exception.class` handler and you get a generic `500` — "Something went wrong" — with the real validation message only visible in the console log, not in the API response. Before starting this activity, confirm `@Valid` is present:
+>
+> ```java
+> @PostMapping("/{id}/interactions")
+> public ResponseEntity<Interaction> addInteraction(
+>         @PathVariable Long id,
+>         @RequestBody @Valid Interaction interaction) {
+>     Interaction createdInteraction = customerService.addInteractionToCustomer(id, interaction);
+>     return new ResponseEntity<>(createdInteraction, HttpStatus.CREATED);
+> }
+> ```
 
 Validation annotation references:
 - https://www.baeldung.com/java-validation
