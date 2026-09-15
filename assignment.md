@@ -46,11 +46,7 @@ Create a Spring Boot project called EmployeeManagementSystem with PostgreSQL dat
      - Create an employee with blank name (should return validation error)
      - Create an employee with invalid email (should return validation error)
      - Get an employee with invalid ID (should return EmployeeNotFoundException)
-
-## Submission (Optional)
-
-- Submit the URL of the GitHub Repository that contains your work to NTU black board.
-- Should you reference the work of your classmate(s) or online resources, give them credit by adding either the name of your classmate or URL.
+.
 
 ## References
 - Java: https://docs.oracle.com/javase/
