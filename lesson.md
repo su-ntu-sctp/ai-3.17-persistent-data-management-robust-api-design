@@ -5,7 +5,7 @@ This lesson extends the `simple-crm` project by switching from H2 to PostgreSQL,
 
 ## Starting Point
 Before beginning this lesson, your `simple-crm` project should have:
-- `Customer` and `Interaction` entity classes with a `@ManyToOne` / `@OneToMany` relationship
+- `Customer` and `Interaction` entity classes with a `@ManyToOne` relationship
 - `CustomerRepository` and `InteractionRepository` interfaces extending `JpaRepository`
 - `CustomerServiceImpl` with both repositories injected
 - H2 configured in `application.properties`
@@ -67,16 +67,22 @@ This will log you in as the `postgres` user. By default, a **superuser** named `
 
 To install PostgreSQL on Mac, we will be using Homebrew. Homebrew is a package manager for Mac.
 
-Install Homebrew:
+First, check whether you already have Homebrew — you may have installed it in an earlier module:
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew --version
 ```
 
-If you have installed Homebrew before, you can update it with:
+**If it prints a version**, you already have Homebrew. Just update it:
 
 ```sh
 brew update && brew upgrade
+```
+
+**If it says `command not found`**, install Homebrew first:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
 Install PostgreSQL using Homebrew:
@@ -282,6 +288,71 @@ SELECT * FROM customer WHERE first_name = ? AND last_name = ?
 
 > **Note:** The field names in the method name must exactly match the field names in your entity class. So if your entity has `firstName` (camelCase), the method uses `FirstName` (capitalised camelCase after `findBy`). Spring handles the translation to `first_name` in SQL automatically.
 
+### Writing Your Own Query with `@Query`
+
+Derived queries work well for straightforward lookups, but method names become unwieldy for anything complex. When that happens, we can write the query ourselves using the `@Query` annotation.
+
+There are two ways to write it.
+
+**JPQL (Jakarta Persistence Query Language)** is the default. It looks like SQL, but it works with your **entity classes and their field names**, not database tables and columns. So you write `Customer` and `firstName`, not `customer` and `first_name`. Hibernate translates it into real SQL for whichever database you are connected to — which means the same JPQL works on PostgreSQL, H2, MySQL, and so on.
+
+**Native SQL** is real SQL sent straight to the database, using actual table and column names. You get the full power of the database, but the query is tied to that specific database and will not necessarily work if you switch.
+
+Here is the same query written both ways in `CustomerRepository`:
+
+```java
+// JPQL — uses the entity name (Customer) and field name (jobTitle)
+@Query("SELECT c FROM Customer c WHERE c.jobTitle = :jobTitle")
+List<Customer> findByJobTitleJPQL(@Param("jobTitle") String jobTitle);
+
+// Native SQL — uses the table name (customer) and column name (job_title)
+@Query(value = "SELECT * FROM customer WHERE job_title = :jobTitle", nativeQuery = true)
+List<Customer> findByJobTitleNative(@Param("jobTitle") String jobTitle);
+```
+
+`:jobTitle` is a named parameter. `@Param("jobTitle")` tells Spring which method argument to plug into it.
+
+> **Imports needed:** `org.springframework.data.jpa.repository.Query` and `org.springframework.data.repository.query.Param`.
+
+Prefer JPQL by default, since it keeps your code database-independent — the same benefit we saw when switching from H2 to PostgreSQL without touching any Java code. Reach for native SQL only when you need something JPQL cannot express.
+
+### Wiring It Through the Layers
+
+A repository method on its own is not reachable from the outside. Just like the derived query above, it needs a service method and a controller endpoint. Let's wire up the JPQL one.
+
+Add the signature to the `CustomerService` interface:
+
+```java
+List<Customer> searchCustomersByJobTitle(String jobTitle);
+```
+
+Implement it in `CustomerServiceImpl`:
+
+```java
+@Override
+public List<Customer> searchCustomersByJobTitle(String jobTitle) {
+    return customerRepository.findByJobTitleJPQL(jobTitle);
+}
+```
+
+Add the endpoint in `CustomerController`:
+
+```java
+@GetMapping("/search/job")
+public ResponseEntity<List<Customer>> searchCustomersByJobTitle(@RequestParam String jobTitle) {
+    List<Customer> foundCustomers = customerService.searchCustomersByJobTitle(jobTitle);
+    return new ResponseEntity<>(foundCustomers, HttpStatus.OK);
+}
+```
+
+Test it:
+
+```
+http://localhost:8080/customers/search/job?jobTitle=Scientist
+```
+
+Notice that the service and controller look exactly the same as they did for the derived query. From their point of view nothing has changed — only the repository knows whether the query was derived from a method name or written out by hand.
+
 For more information, read about [JPA Derived Query from Method Name](https://www.baeldung.com/spring-data-derived-queries).
 
 ---
@@ -332,7 +403,7 @@ Without a global handler, every controller method that could throw an exception 
 
 Before writing the handler, we need a consistent shape for our error responses. If we return errors as plain strings, the frontend receives an inconsistent response — sometimes a JSON object, sometimes a plain string — which makes errors harder to parse and display meaningfully.
 
-Create an `ErrorResponse` class that gives every error a message and a timestamp:
+Create an `ErrorResponse` class in your `exceptions` folder, alongside `CustomerNotFoundException`. It gives every error a message and a timestamp:
 
 ```java
 import java.time.LocalDateTime;
@@ -354,7 +425,7 @@ public class ErrorResponse {
 
 ### Create the Handler
 
-Create a new class `GlobalExceptionHandler.java`:
+Create a new class `GlobalExceptionHandler.java`, also in the `exceptions` folder:
 
 ```java
 import java.time.LocalDateTime;
