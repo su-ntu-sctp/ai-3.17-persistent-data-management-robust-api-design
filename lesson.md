@@ -560,25 +560,43 @@ public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNo
 
 Now test by submitting an invalid request — you should get a structured error response with the specific validation message.
 
+---
 ### 👨‍💻 Activity **(10 minutes)**
 
-Add validation constraints for the following:
+Add validation to two more fields on the `Customer` entity.
 
-- Customer `contactNo` should be exactly 8 characters long
-- Interaction `remarks` should be at least 3 and at most 30 characters long
-- `interactionDate` should not be in the future — use `@PastOrPresent` for this
+**Task 1** — `contactNo` should be exactly 8 characters long.
 
-> ⚠️ **Important:** This activity only produces the clean `400 Bad Request` response you expect if the Interaction-creation endpoint (`addInteractionToCustomer` in `CustomerController`, from Lesson 3.16) has `@Valid` on its `@RequestBody Interaction interaction` parameter — the same way `createCustomer` does above. Without `@Valid` there, invalid Interaction data skips controller-level validation entirely and instead fails later at persist time via Hibernate's own Bean Validation, throwing `ConstraintViolationException` instead of `MethodArgumentNotValidException`. Since `handleValidationExceptions` only catches the latter, a missing `@Valid` here means the request falls through to the generic `Exception.class` handler and you get a generic `500` — "Something went wrong" — with the real validation message only visible in the console log, not in the API response. Before starting this activity, confirm `@Valid` is present:
->
-> ```java
-> @PostMapping("/{id}/interactions")
-> public ResponseEntity<Interaction> addInteractionToCustomer(
->         @PathVariable Long id,
->         @RequestBody @Valid Interaction interaction) {
->     Interaction newInteraction = customerService.addInteractionToCustomer(id, interaction);
->     return new ResponseEntity<>(newInteraction, HttpStatus.CREATED);
-> }
-> ```
+**Task 2** — `jobTitle` should be between 2 and 50 characters long.
+
+**Hints:**
+
+- Both tasks use the same annotation: `@Size`
+- `@Size` takes `min` and `max` values, for example `@Size(min = 5, max = 20, message = "...")`
+- For an exact length, set `min` and `max` to the same number
+- Always include a `message` so the client knows what went wrong
+- The annotation goes directly above the field, just like `@NotBlank` and `@Email`
+- Import from `jakarta.validation.constraints.Size`
+
+**Test it in Postman:**
+
+Send a POST to `/customers` with a short contact number:
+
+```json
+{
+    "firstName": "Tony",
+    "lastName": "Stark",
+    "email": "tony@avengers.com",
+    "contactNo": "123",
+    "jobTitle": "Engineer",
+    "yearOfBirth": 1970
+}
+```
+
+You should get a `400 Bad Request` with your message, not a `201 Created`.
+
+
+
 
 Validation annotation references:
 - https://www.baeldung.com/java-validation
