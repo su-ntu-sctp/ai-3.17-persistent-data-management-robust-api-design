@@ -481,33 +481,6 @@ public ResponseEntity<ErrorResponse> handleException(Exception ex) {
     return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
 }
 ```
-
-### 👨‍💻 Activity **(15 minutes)**
-
-**Step 1** — Create a new `InteractionNotFoundException` class that extends `RuntimeException`:
-
-```java
-public class InteractionNotFoundException extends RuntimeException {
-    public InteractionNotFoundException(Long id) {
-        super("Interaction not found with id: " + id);
-    }
-}
-```
-
-**Step 2** — Update `GlobalExceptionHandler` to handle both `CustomerNotFoundException` and `InteractionNotFoundException` in a single method using array notation:
-
-```java
-@ExceptionHandler({CustomerNotFoundException.class, InteractionNotFoundException.class})
-public ResponseEntity<ErrorResponse> handleResourceNotFoundException(RuntimeException ex) {
-    ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), LocalDateTime.now());
-    return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
-}
-```
-
-Since both exceptions extend `RuntimeException`, the parameter type is `RuntimeException` and `ex.getMessage()` works for both.
-
-> **Note:** `InteractionServiceImpl` is not part of this module — `Interaction` was introduced solely to demonstrate the many-to-one relationship, and interactions are handled through `CustomerServiceImpl`. `InteractionNotFoundException` is created here for completeness and good practice, as it can be used in `CustomerServiceImpl` if interaction lookups are needed in future.
-
 ---
 
 ## Part 6: Validation
